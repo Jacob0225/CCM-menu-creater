@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Visual Custom Chest Menu Editor</title>
+<style>
+body { font-family: sans-serif; background: #f0f0f0; margin: 0; padding: 0; }
+header { background: #333; color: white; padding: 10px; text-align: center; }
+main { display: flex; gap: 20px; padding: 20px; }
+#menu-builder { flex: 1; max-width: 700px; }
+label { display: block; margin: 5px 0; }
+input, select, textarea { width: 100%; padding: 3px; margin-top: 2px; }
+button { padding: 5px; margin-top: 5px; cursor: pointer; }
+#json-output { width: 100%; height: 300px; margin-top: 10px; }
+.page { border: 1px solid #aaa; background: #fff; padding: 10px; margin: 10px 0; }
+.item { border: 1px dashed #999; padding: 5px; margin: 5px 0; }
+#chest-preview-container { margin-left: 20px; }
+#chest-preview { display: grid; gap: 5px; background: #222; padding: 10px; border: 2px solid #555; }
+#chest-preview .slot { width: 50px; height: 50px; background: #444; color: white; font-size: 12px; display: flex; justify-content: center; align-items: center; position: relative; }
+#chest-preview .slot:hover { background: #666; }
+</style>
+</head>
+<body>
+
+<header><h1>Visual Custom Chest Menu Editor</h1></header>
+
+<main>
+<div id="menu-builder">
+  <label>Menu ID: <input id="menu-id" placeholder="test_menu"></label>
+  <label>Menu Name: <input id="menu-name" placeholder="Test Menu"></label>
+  <label>Menu Size:
+    <select id="menu-size" onchange="drawChestPreview()">
+      <option value="small">Small Chest (27 slots)</option>
+      <option value="large">Large Chest (54 slots)</option>
+    </select>
+  </label>
+  <label>Filler Item: <input id="filler-item" placeholder="minecraft:gray_stained_glass_pane"></label>
+  <label>Filler Name: <input id="filler-name" placeholder=" "></label>
+
+  <button onclick="addPage()">Add Page</button>
+  <div id="pages"></div>
+
+  <button onclick="generateJSON()">Generate JSON</button>
+  <textarea id="json-output" readonly></textarea>
+</div>
+
+<div id="chest-preview-container">
+  <h3>Chest Preview</h3>
+  <div id="chest-preview"></div>
+</div>
+
+</main>
+
+<script>
+let pages = [];
+let currentPageIndex = 0;
+
+// Add new page
+function addPage() {
+  const pageIndex = pages.length;
+  const page = { title: `Page ${pageIndex + 1}`, items: [] };
+  pages.push(page);
+
+  const pageDiv = document.createElement('div');
+  pageDiv.className = 'page';
+  pageDiv.id = `page-${pageIndex}`;
+  pageDiv.innerHTML = `
+    <h3>Page ${pageIndex + 1}</h3>
+    <label>Title: <input value="${page.title}" onchange="pages[${pageIndex}].title=this.value; drawChestPreview();"></label>
+    <button onclick="addItem(${pageIndex})">Add Item</button>
+    <div id="items-${pageIndex}"></div>
+  `;
+  document.getElementById('pages').appendChild(pageDiv);
+  switchPage(pageIndex);
+}
+
+// Switch current page
+function switchPage(index) {
+  currentPageIndex = index;
+  drawChestPreview();
+}
+
+// Chest size
+function getChestSize() {
+  const size = document.getElementById('menu-size').value;
+  return size==='small'?27:54;
+}
+
+// Draw chest preview
+function drawChestPreview() {
+  const preview = document.getElementById('chest-preview');
+  preview.innerHTML = '';
+  const size = getChestSize();
+  const cols = 9;
+  preview.style.gridTemplateColumns = `repeat(${cols},50px)`;
+  preview.style.gridTemplateRows = `repeat(${Math.ceil(size/cols)},50px)`;
+
+  const page = pages[currentPageIndex];
+  for(let i=0;i<size;i++){
+    const slotDiv=document.createElement('div');
+    slotDiv.className='slot';
+    slotDiv.title=`Slot ${i}`;
+    const item=page?.items.find(it=>it.slot===i);
+    if(item) slotDiv.textContent=item.name||item.item||'';
+    slotDiv.onclick=()=>editItem(currentPageIndex,i);
+    preview.appendChild(slotDiv);
+  }
+}
+
+// Add new item
+function addItem(pageIndex){
+  const page=pages[pageIndex];
+  const item={name:'',slot:0,item:'',action:{type:'close'},lore:[]};
+  page.items.push(item);
+  renderItems(pageIndex);
+  drawChestPreview();
+}
+
+// Render items for a page
+function renderItems(pageIndex){
+  const itemsDiv=document.getElementById(`items-${pageIndex}`);
+  itemsDiv.innerHTML='';
+  const page=pages[pageIndex];
+  page.items.forEach((item,idx)=>{
+    const div=document.createElement('div');
+    div.className='item';
+    div.innerHTML=`
+      <label>Name: <input value="${item.name}" onchange="itemChanged(${pageIndex},${idx},'name',this.value)"></label>
+      <label>Slot: <input type="number" min="0" max="${getChestSize()-1}" value="${item.slot}" onchange="itemChanged(${pageIndex},${idx},'slot',this.value)"></label>
+      <label>Item: <input value="${item.item}" onchange="itemChanged(${pageIndex},${idx},'item',this.value)"></label>
+      <label>Action Type: 
+        <select onchange="itemChanged(${pageIndex},${idx},'actionType',this.value)">
+          <option value="close" ${item.action.type==='close'?'selected':''}>close</option>
+          <option value="command" ${item.action.type==='command'?'selected':''}>command</option>
+          <option value="teleport" ${item.action.type==='teleport'?'selected':''}>teleport</option>
+          <option value="next_page" ${item.action.type==='next_page'?'selected':''}>next_page</option>
+          <option value="previous_page" ${item.action.type==='previous_page'?'selected':''}>previous_page</option>
+          <option value="jump_to_page" ${item.action.type==='jump_to_page'?'selected':''}>jump_to_page</option>
+        </select>
+      </label>
+      <div id="extra-${pageIndex}-${idx}"></div>
+      <label>Lore (comma-separated): <input value="${item.lore.join(',')}" onchange="itemChanged(${pageIndex},${idx},'lore',this.value)"></label>
+    `;
+    itemsDiv.appendChild(div);
+    renderExtraFields(pageIndex, idx);
+  });
+}
+
+// Handle changes
+function itemChanged(pageIndex,itemIndex,field,value){
+  const item=pages[pageIndex].items[itemIndex];
+  if(field==='name') item.name=value;
+  else if(field==='slot') item.slot=parseInt(value);
+  else if(field==='item') item.item=value;
+  else if(field==='actionType') item.action.type=value;
+  else if(field==='lore') item.lore=value.split(',');
+  renderExtraFields(pageIndex,itemIndex);
+  drawChestPreview();
+}
+
+// Render extra fields based on action type
+function renderExtraFields(pageIndex,itemIndex){
+  const item=pages[pageIndex].items[itemIndex];
+  const container=document.getElementById(`extra-${pageIndex}-${itemIndex}`);
+  container.innerHTML='';
+  if(item.action.type==='command'){
+    container.innerHTML=`<label>Command: <input value="${item.action.command||''}" onchange="itemChangedExtra(${pageIndex},${itemIndex},'command',this.value)"></label>
+    <label>Run as Player: <input type="checkbox" ${item.action.run_as_player?'checked':''} onchange="itemChangedExtra(${pageIndex},${itemIndex},'run_as_player',this.checked)"></label>`;
+  } else if(item.action.type==='teleport'){
+    container.innerHTML=`<label>X: <input type="number" value="${item.action.x||0}" onchange="itemChangedExtra(${pageIndex},${itemIndex},'x',this.value)"></label>
+    <label>Y: <input type="number" value="${item.action.y||0}" onchange="itemChangedExtra(${pageIndex},${itemIndex},'y',this.value)"></label>
+    <label>Z: <input type="number" value="${item.action.z||0}" onchange="itemChangedExtra(${pageIndex},${itemIndex},'z',this.value)"></label>
+    <label>Dimension: <input value="${item.action.dimension||'minecraft:overworld'}" onchange="itemChangedExtra(${pageIndex},${itemIndex},'dimension',this.value)"></label>`;
+  } else if(item.action.type==='jump_to_page'){
+    const options = pages.map((p,i)=>`<option value="${i}" ${i===item.action.target_page_index?'selected':''}>Page ${i+1}</option>`).join('');
+    container.innerHTML=`<label>Target Page: <select onchange="itemChangedExtra(${pageIndex},${itemIndex},'target_page_index',this.value)">${options}</select></label>`;
+  }
+}
+
+// Handle extra field changes
+function itemChangedExtra(pageIndex,itemIndex,field,value){
+  const item=pages[pageIndex].items[itemIndex];
+  if(field==='command') item.action.command=value;
+  else if(field==='run_as_player') item.action.run_as_player=value;
+  else if(field==='x') item.action.x=parseInt(value);
+  else if(field==='y') item.action.y=parseInt(value);
+  else if(field==='z') item.action.z=parseInt(value);
+  else if(field==='dimension') item.action.dimension=value;
+  else if(field==='target_page_index') item.action.target_page_index=parseInt(value);
+  drawChestPreview();
+}
+
+// Click preview slot
+function editItem(pageIndex,slotIndex){
+  const page=pages[pageIndex];
+  let item=page.items.find(it=>it.slot===slotIndex);
+  if(!item){
+    item={name:'',slot:slotIndex,item:'',action:{type:'close'},lore:[]};
+    page.items.push(item);
+    renderItems(pageIndex);
+  }
+  const name=prompt('Item Name',item.name);
+  if(name!==null)item.name=name;
+  drawChestPreview();
+}
+
+// Generate JSON
+function generateJSON(){
+  const output={
+    "$schema":"https://raw.githubusercontent.com/MagnusHJensen/custom-chest-menus/refs/heads/main/docs/v1.schema.json",
+    format_version:1,
+    id:document.getElementById('menu-id').value,
+    name:document.getElementById('menu-name').value,
+    size:document.getElementById('menu-size').value,
+    filler:{
+      slot:0,
+      item:document.getElementById('filler-item').value,
+      name:document.getElementById('filler-name').value
+    },
+    pages:pages
+  };
+  document.getElementById('json-output').value=JSON.stringify(output,null,2);
+}
+
+// Init first page
+addPage();
+</script>
+</body>
+</html>
