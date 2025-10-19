@@ -30,18 +30,19 @@ button { padding: 5px; margin-top: 5px; cursor: pointer; }
   <label>Menu Name: <input id="menu-name" placeholder="Test Menu"></label>
   <label>Menu Size:
     <select id="menu-size" onchange="drawChestPreview()">
-      <option value="small">Small Chest (27 slots)</option>
-      <option value="large">Large Chest (54 slots)</option>
+      <option value="single">Single Chest (27 slots)</option>
+      <option value="double">Double Chest (54 slots)</option>
     </select>
   </label>
   <label>Filler Item: <input id="filler-item" placeholder="minecraft:gray_stained_glass_pane"></label>
   <label>Filler Name: <input id="filler-name" placeholder=" "></label>
 
   <button onclick="addPage()">Add Page</button>
+  <button onclick="importJSON()">Import JSON</button>
   <div id="pages"></div>
 
   <button onclick="generateJSON()">Generate JSON</button>
-  <textarea id="json-output" readonly></textarea>
+  <textarea id="json-output" placeholder="Generated JSON will appear here..." readonly></textarea>
 </div>
 
 <div id="chest-preview-container">
@@ -56,9 +57,9 @@ let pages = [];
 let currentPageIndex = 0;
 
 // Add new page
-function addPage() {
+function addPage(pageData) {
   const pageIndex = pages.length;
-  const page = { title: `Page ${pageIndex + 1}`, items: [] };
+  const page = pageData || { title: `Page ${pageIndex + 1}`, items: [] };
   pages.push(page);
 
   const pageDiv = document.createElement('div');
@@ -71,6 +72,7 @@ function addPage() {
     <div id="items-${pageIndex}"></div>
   `;
   document.getElementById('pages').appendChild(pageDiv);
+  renderItems(pageIndex);
   switchPage(pageIndex);
 }
 
@@ -83,7 +85,7 @@ function switchPage(index) {
 // Chest size
 function getChestSize() {
   const size = document.getElementById('menu-size').value;
-  return size==='small'?27:54;
+  return size==='single'?27:54;
 }
 
 // Draw chest preview
@@ -108,9 +110,9 @@ function drawChestPreview() {
 }
 
 // Add new item
-function addItem(pageIndex){
+function addItem(pageIndex, itemData){
   const page=pages[pageIndex];
-  const item={name:'',slot:0,item:'',action:{type:'close'},lore:[]};
+  const item=itemData||{name:'',slot:0,item:'',action:{type:'close'},lore:[]};
   page.items.push(item);
   renderItems(pageIndex);
   drawChestPreview();
@@ -199,8 +201,6 @@ function editItem(pageIndex,slotIndex){
     page.items.push(item);
     renderItems(pageIndex);
   }
-  const name=prompt('Item Name',item.name);
-  if(name!==null)item.name=name;
   drawChestPreview();
 }
 
@@ -220,6 +220,26 @@ function generateJSON(){
     pages:pages
   };
   document.getElementById('json-output').value=JSON.stringify(output,null,2);
+}
+
+// Import JSON
+function importJSON(){
+  const jsonStr = prompt("Paste your menu JSON here:");
+  if(!jsonStr) return;
+  try{
+    const data = JSON.parse(jsonStr);
+    document.getElementById('menu-id').value=data.id||'';
+    document.getElementById('menu-name').value=data.name||'';
+    document.getElementById('menu-size').value=data.size==='double'?'double':'single';
+    document.getElementById('filler-item').value=data.filler?.item||'minecraft:gray_stained_glass_pane';
+    document.getElementById('filler-name').value=data.filler?.name||' ';
+    pages=[];
+    document.getElementById('pages').innerHTML='';
+    (data.pages||[]).forEach(p=>addPage(JSON.parse(JSON.stringify(p))));
+    drawChestPreview();
+  } catch(e){
+    alert("Invalid JSON: "+e);
+  }
 }
 
 // Init first page
