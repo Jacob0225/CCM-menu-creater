@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Visual Custom Chest Menu Editor</title>
+<title>CCM Menu Creator</title>
 <style>
 body { font-family: sans-serif; background: #f0f0f0; margin: 0; padding: 0; }
 header { background: #333; color: white; padding: 10px; text-align: center; }
@@ -13,23 +13,29 @@ input, select, textarea { width: 100%; padding: 3px; margin-top: 2px; }
 button { padding: 5px; margin-top: 5px; cursor: pointer; }
 #json-output { width: 100%; height: 300px; margin-top: 10px; }
 .page { border: 1px solid #aaa; background: #fff; padding: 10px; margin: 10px 0; }
-.item { border: 1px dashed #999; padding: 5px; margin: 5px 0; }
-#chest-preview-container { margin-left: 20px; }
-#chest-preview { display: grid; gap: 5px; background: #222; padding: 10px; border: 2px solid #555; }
-#chest-preview .slot { width: 50px; height: 50px; background: #444; color: white; font-size: 12px; display: flex; justify-content: center; align-items: center; position: relative; }
-#chest-preview .slot:hover { background: #666; }
+.item { border: 1px dashed #999; padding: 5px; margin: 5px 0; display:flex; flex-direction:column; }
+#chest-preview-container { margin-left: 20px; display: flex; flex-wrap: wrap; gap: 20px; }
+.chest-preview-wrapper { display: flex; flex-direction: column; align-items:center; }
+.chest-preview { display: grid; gap: 5px; background: #222; padding: 10px; border: 2px solid #555; }
+.chest-preview .slot { width: 50px; height: 50px; background: #444; display: flex; justify-content: center; align-items: center; position: relative; cursor:pointer; }
+.chest-preview .slot:hover { background: #666; }
+.chest-preview .slot img { width: 80%; height: 80%; object-fit: contain; pointer-events:none; }
+#overlay { position:fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.5); display:none; z-index:999; }
+#slot-editor { position: fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; border:2px solid #333; padding:10px; display:none; z-index:1000; max-width:300px; width:100%; }
+#slot-editor label { display:block; margin:3px 0; }
+#slot-editor button { margin-top:5px; }
 </style>
 </head>
 <body>
 
-<header><h1>Visual Custom Chest Menu Editor</h1></header>
+<header><h1>CCM Menu Creator</h1></header>
 
 <main>
 <div id="menu-builder">
   <label>Menu ID: <input id="menu-id" placeholder="test_menu"></label>
   <label>Menu Name: <input id="menu-name" placeholder="Test Menu"></label>
   <label>Menu Size:
-    <select id="menu-size" onchange="drawChestPreview()">
+    <select id="menu-size" onchange="drawAllPreviews()">
       <option value="single">Single Chest (27 slots)</option>
       <option value="double">Double Chest (54 slots)</option>
     </select>
@@ -46,79 +52,86 @@ button { padding: 5px; margin-top: 5px; cursor: pointer; }
 </div>
 
 <div id="chest-preview-container">
-  <h3>Chest Preview</h3>
-  <div id="chest-preview"></div>
+  <!-- previews for each page will be added here -->
 </div>
-
 </main>
+
+<div id="overlay"></div>
+<div id="slot-editor">
+  <h3>Edit Item</h3>
+  <label>Name: <input id="editor-name"></label>
+  <label>Item ID: <input id="editor-item"></label>
+  <label>Slot: <input type="number" id="editor-slot"></label>
+  <label>Action Type:
+    <select id="editor-action">
+      <option value="close">close</option>
+      <option value="command">command</option>
+      <option value="teleport">teleport</option>
+      <option value="next_page">next_page</option>
+      <option value="previous_page">previous_page</option>
+      <option value="jump_to_page">jump_to_page</option>
+    </select>
+  </label>
+  <label>Lore (comma-separated): <input id="editor-lore"></label>
+  <div id="editor-extra"></div>
+  <button onclick="saveSlot()">Save</button>
+  <button onclick="closeEditor()">Cancel</button>
+</div>
 
 <script>
 let pages = [];
-let currentPageIndex = 0;
+let editingItem = null;
 
-// Add new page
+// --- Pages ---
 function addPage(pageData) {
   const pageIndex = pages.length;
-  const page = pageData || { title: `Page ${pageIndex + 1}`, items: [] };
+  const page = pageData || { title: `Page ${pageIndex+1}`, items: [] };
   pages.push(page);
-
-  const pageDiv = document.createElement('div');
-  pageDiv.className = 'page';
-  pageDiv.id = `page-${pageIndex}`;
-  pageDiv.innerHTML = `
-    <h3>Page ${pageIndex + 1}</h3>
-    <label>Title: <input value="${page.title}" onchange="pages[${pageIndex}].title=this.value; drawChestPreview();"></label>
-    <button onclick="addItem(${pageIndex})">Add Item</button>
-    <div id="items-${pageIndex}"></div>
-  `;
-  document.getElementById('pages').appendChild(pageDiv);
-  renderItems(pageIndex);
-  switchPage(pageIndex);
+  renderAllPages();
+  drawAllPreviews();
 }
 
-// Switch current page
-function switchPage(index) {
-  currentPageIndex = index;
-  drawChestPreview();
+function removePage(index) {
+  if(!confirm(`Remove Page ${index+1}?`)) return;
+  pages.splice(index,1);
+  renderAllPages();
+  drawAllPreviews();
 }
 
-// Chest size
-function getChestSize() {
-  const size = document.getElementById('menu-size').value;
-  return size==='single'?27:54;
+function renderAllPages(){
+  const container = document.getElementById('pages');
+  container.innerHTML='';
+  pages.forEach((page,pageIndex)=>{
+    const pageDiv = document.createElement('div');
+    pageDiv.className='page';
+    pageDiv.id = `page-${pageIndex}`;
+    pageDiv.innerHTML = `
+      <h3>${page.title || `Page ${pageIndex+1}`}</h3>
+      <label>Title: <input value="${page.title}" onchange="pages[${pageIndex}].title=this.value; drawAllPreviews();"></label>
+      <button onclick="addItem(${pageIndex})">Add Item</button>
+      <button onclick="removePage(${pageIndex})">Remove Page</button>
+      <div id="items-${pageIndex}"></div>
+    `;
+    container.appendChild(pageDiv);
+    renderItems(pageIndex);
+  });
 }
 
-// Draw chest preview
-function drawChestPreview() {
-  const preview = document.getElementById('chest-preview');
-  preview.innerHTML = '';
-  const size = getChestSize();
-  const cols = 9;
-  preview.style.gridTemplateColumns = `repeat(${cols},50px)`;
-  preview.style.gridTemplateRows = `repeat(${Math.ceil(size/cols)},50px)`;
-
-  const page = pages[currentPageIndex];
-  for(let i=0;i<size;i++){
-    const slotDiv=document.createElement('div');
-    slotDiv.className='slot';
-    slotDiv.title=`Slot ${i}`;
-    const item=page?.items.find(it=>it.slot===i);
-    if(item) slotDiv.textContent=item.name||item.item||'';
-    slotDiv.onclick=()=>editItem(currentPageIndex,i);
-    preview.appendChild(slotDiv);
-  }
-}
-
-// Add new item
+// --- Items ---
 function addItem(pageIndex, itemData){
   const page=pages[pageIndex];
   const item=itemData||{name:'',slot:0,item:'',action:{type:'close'},lore:[]};
   page.items.push(item);
   renderItems(pageIndex);
-  drawChestPreview();
+  drawAllPreviews();
 }
 
-// Render items for a page
+function removeItem(pageIndex,itemIndex){
+  pages[pageIndex].items.splice(itemIndex,1);
+  renderItems(pageIndex);
+  drawAllPreviews();
+}
+
 function renderItems(pageIndex){
   const itemsDiv=document.getElementById(`items-${pageIndex}`);
   itemsDiv.innerHTML='';
@@ -141,14 +154,15 @@ function renderItems(pageIndex){
         </select>
       </label>
       <div id="extra-${pageIndex}-${idx}"></div>
-      <label>Lore (comma-separated): <input value="${item.lore.join(',')}" onchange="itemChanged(${pageIndex},${idx},'lore',this.value)"></label>
+      <label>Lore: <input value="${item.lore.join(',')}" onchange="itemChanged(${pageIndex},${idx},'lore',this.value)"></label>
+      <button onclick="openEditorSlot(${pageIndex}, ${idx})">Edit in Popup</button>
+      <button onclick="removeItem(${pageIndex}, ${idx})">Remove Item</button>
     `;
     itemsDiv.appendChild(div);
-    renderExtraFields(pageIndex, idx);
+    renderExtraFields(pageIndex,idx);
   });
 }
 
-// Handle changes
 function itemChanged(pageIndex,itemIndex,field,value){
   const item=pages[pageIndex].items[itemIndex];
   if(field==='name') item.name=value;
@@ -157,29 +171,27 @@ function itemChanged(pageIndex,itemIndex,field,value){
   else if(field==='actionType') item.action.type=value;
   else if(field==='lore') item.lore=value.split(',');
   renderExtraFields(pageIndex,itemIndex);
-  drawChestPreview();
+  drawAllPreviews();
 }
 
-// Render extra fields based on action type
 function renderExtraFields(pageIndex,itemIndex){
   const item=pages[pageIndex].items[itemIndex];
   const container=document.getElementById(`extra-${pageIndex}-${itemIndex}`);
   container.innerHTML='';
   if(item.action.type==='command'){
     container.innerHTML=`<label>Command: <input value="${item.action.command||''}" onchange="itemChangedExtra(${pageIndex},${itemIndex},'command',this.value)"></label>
-    <label>Run as Player: <input type="checkbox" ${item.action.run_as_player?'checked':''} onchange="itemChangedExtra(${pageIndex},${itemIndex},'run_as_player',this.checked)"></label>`;
+      <label>Run as Player: <input type="checkbox" ${item.action.run_as_player?'checked':''} onchange="itemChangedExtra(${pageIndex},${itemIndex},'run_as_player',this.checked)"></label>`;
   } else if(item.action.type==='teleport'){
     container.innerHTML=`<label>X: <input type="number" value="${item.action.x||0}" onchange="itemChangedExtra(${pageIndex},${itemIndex},'x',this.value)"></label>
-    <label>Y: <input type="number" value="${item.action.y||0}" onchange="itemChangedExtra(${pageIndex},${itemIndex},'y',this.value)"></label>
-    <label>Z: <input type="number" value="${item.action.z||0}" onchange="itemChangedExtra(${pageIndex},${itemIndex},'z',this.value)"></label>
-    <label>Dimension: <input value="${item.action.dimension||'minecraft:overworld'}" onchange="itemChangedExtra(${pageIndex},${itemIndex},'dimension',this.value)"></label>`;
+      <label>Y: <input type="number" value="${item.action.y||0}" onchange="itemChangedExtra(${pageIndex},${itemIndex},'y',this.value)"></label>
+      <label>Z: <input type="number" value="${item.action.z||0}" onchange="itemChangedExtra(${pageIndex},${itemIndex},'z',this.value)"></label>
+      <label>Dimension: <input value="${item.action.dimension||'minecraft:overworld'}" onchange="itemChangedExtra(${pageIndex},${itemIndex},'dimension',this.value)"></label>`;
   } else if(item.action.type==='jump_to_page'){
     const options = pages.map((p,i)=>`<option value="${i}" ${i===item.action.target_page_index?'selected':''}>Page ${i+1}</option>`).join('');
     container.innerHTML=`<label>Target Page: <select onchange="itemChangedExtra(${pageIndex},${itemIndex},'target_page_index',this.value)">${options}</select></label>`;
   }
 }
 
-// Handle extra field changes
 function itemChangedExtra(pageIndex,itemIndex,field,value){
   const item=pages[pageIndex].items[itemIndex];
   if(field==='command') item.action.command=value;
@@ -189,22 +201,100 @@ function itemChangedExtra(pageIndex,itemIndex,field,value){
   else if(field==='z') item.action.z=parseInt(value);
   else if(field==='dimension') item.action.dimension=value;
   else if(field==='target_page_index') item.action.target_page_index=parseInt(value);
-  drawChestPreview();
+  drawAllPreviews();
 }
 
-// Click preview slot
-function editItem(pageIndex,slotIndex){
+// --- Chest Preview ---
+function getChestSize(){ return document.getElementById('menu-size').value==='single'?27:54; }
+
+function drawAllPreviews(){
+  const container = document.getElementById('chest-preview-container');
+  container.innerHTML='';
+  pages.forEach((page,pageIndex)=>{
+    drawPagePreview(page,pageIndex,container);
+  });
+}
+
+function drawPagePreview(page,pageIndex,container){
+  const size = getChestSize();
+  const cols = 9;
+  const wrapper = document.createElement('div');
+  wrapper.className='chest-preview-wrapper';
+  const label = document.createElement('h4');
+  label.textContent = page.title || `Page ${pageIndex+1}`;
+  wrapper.appendChild(label);
+
+  const preview = document.createElement('div');
+  preview.className='chest-preview';
+  preview.style.gridTemplateColumns = `repeat(${cols},50px)`;
+  preview.style.gridTemplateRows = `repeat(${Math.ceil(size/cols)},50px)`;
+
+  page.items.forEach(item=>{
+    const slotDiv=document.createElement('div');
+    slotDiv.className='slot';
+    slotDiv.title=item.name||item.item;
+    const img=document.createElement('img');
+    const iconId=item.item.replace(':','_');
+    img.src=`icons/${iconId}.png`;
+    slotDiv.appendChild(img);
+    slotDiv.onclick=()=>openEditorSlot(pageIndex, item.slot);
+    preview.appendChild(slotDiv);
+  });
+
+  for(let i=0;i<size;i++){
+    if(!page.items.find(it=>it.slot===i)){
+      const slotDiv=document.createElement('div');
+      slotDiv.className='slot';
+      slotDiv.title=`Slot ${i}`;
+      slotDiv.onclick=()=>openEditorSlot(pageIndex,i);
+      preview.appendChild(slotDiv);
+    }
+  }
+
+  wrapper.appendChild(preview);
+  container.appendChild(wrapper);
+}
+
+// --- Slot Editor Popup ---
+function openEditorSlot(pageIndex,slotIndex){
   const page=pages[pageIndex];
-  let item=page.items.find(it=>it.slot===slotIndex);
+  let item = page.items.find(it=>it.slot===slotIndex);
   if(!item){
     item={name:'',slot:slotIndex,item:'',action:{type:'close'},lore:[]};
     page.items.push(item);
     renderItems(pageIndex);
   }
-  drawChestPreview();
+  editingItem={pageIndex,slotIndex};
+  document.getElementById('editor-name').value=item.name;
+  document.getElementById('editor-item').value=item.item;
+  document.getElementById('editor-slot').value=item.slot;
+  document.getElementById('editor-action').value=item.action.type;
+  document.getElementById('editor-lore').value=item.lore.join(',');
+  document.getElementById('overlay').style.display='block';
+  document.getElementById('slot-editor').style.display='block';
 }
 
-// Generate JSON
+function closeEditor(){
+  editingItem=null;
+  document.getElementById('overlay').style.display='none';
+  document.getElementById('slot-editor').style.display='none';
+}
+
+function saveSlot(){
+  if(!editingItem) return;
+  const {pageIndex,slotIndex}=editingItem;
+  const item = pages[pageIndex].items.find(it=>it.slot==slotIndex);
+  item.name=document.getElementById('editor-name').value;
+  item.item=document.getElementById('editor-item').value;
+  item.slot=parseInt(document.getElementById('editor-slot').value);
+  item.action.type=document.getElementById('editor-action').value;
+  item.lore=document.getElementById('editor-lore').value.split(',');
+  renderItems(pageIndex);
+  drawAllPreviews();
+  closeEditor();
+}
+
+// --- JSON ---
 function generateJSON(){
   const output={
     "$schema":"https://raw.githubusercontent.com/MagnusHJensen/custom-chest-menus/refs/heads/main/docs/v1.schema.json",
@@ -222,12 +312,11 @@ function generateJSON(){
   document.getElementById('json-output').value=JSON.stringify(output,null,2);
 }
 
-// Import JSON
 function importJSON(){
-  const jsonStr = prompt("Paste your menu JSON here:");
+  const jsonStr=prompt("Paste your menu JSON here:");
   if(!jsonStr) return;
   try{
-    const data = JSON.parse(jsonStr);
+    const data=JSON.parse(jsonStr);
     document.getElementById('menu-id').value=data.id||'';
     document.getElementById('menu-name').value=data.name||'';
     document.getElementById('menu-size').value=data.size==='double'?'double':'single';
@@ -236,13 +325,11 @@ function importJSON(){
     pages=[];
     document.getElementById('pages').innerHTML='';
     (data.pages||[]).forEach(p=>addPage(JSON.parse(JSON.stringify(p))));
-    drawChestPreview();
-  } catch(e){
-    alert("Invalid JSON: "+e);
-  }
+    drawAllPreviews();
+  }catch(e){alert("Invalid JSON: "+e);}
 }
 
-// Init first page
+// --- Init ---
 addPage();
 </script>
 </body>
